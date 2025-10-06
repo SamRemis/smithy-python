@@ -323,10 +323,12 @@ public final class StructureGenerator implements Runnable {
             }
 
             String memberName = symbolProvider.toMemberName(member);
-            String docs = writer.formatDocs(String.format(":param %s: %s%s",
+            writer.indent();
+            String docs = writer.formatDocs(String.format("%s: %s%s",
                     memberName,
                     descriptionPrefix,
                     trait.getValue()));
+            writer.dedent();
             writer.write(docs);
         });
     }

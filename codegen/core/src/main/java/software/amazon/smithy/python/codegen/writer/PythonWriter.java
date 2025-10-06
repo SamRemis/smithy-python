@@ -4,8 +4,6 @@
  */
 package software.amazon.smithy.python.codegen.writer;
 
-import static software.amazon.smithy.python.codegen.SymbolProperties.IMPORTABLE;
-
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -23,8 +21,10 @@ import software.amazon.smithy.model.node.NullNode;
 import software.amazon.smithy.model.node.NumberNode;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.node.StringNode;
+import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.python.codegen.CodegenUtils;
 import software.amazon.smithy.python.codegen.PythonSettings;
+import software.amazon.smithy.python.codegen.SymbolProperties;
 import software.amazon.smithy.utils.SmithyUnstableApi;
 import software.amazon.smithy.utils.StringUtils;
 
@@ -39,10 +39,9 @@ import software.amazon.smithy.utils.StringUtils;
 public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclarations> {
 
     private static final Logger LOGGER = Logger.getLogger(PythonWriter.class.getName());
-    private static final MarkdownToRstDocConverter DOC_CONVERTER = MarkdownToRstDocConverter.getInstance();
 
     private final String fullPackageName;
-    private final String commentStart;
+    private final boolean addCodegenWarningHeader;
     private boolean addLogger = false;
 
     /**
@@ -52,7 +51,7 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
      * @param fullPackageName The fully-qualified name of the package.
      */
     public PythonWriter(PythonSettings settings, String fullPackageName) {
-        this(settings, fullPackageName, "#");
+        this(settings, fullPackageName, true);
     }
 
     /**
@@ -60,16 +59,16 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
      *
      * @param settings The python plugin settings.
      * @param fullPackageName The fully-qualified name of the package.
-     * @param commentStart The string that starts a comment in the given file format
+     * @param addCodegenWarningHeader Whether to add a header comment warning that the file is code generated.
      */
-    public PythonWriter(PythonSettings settings, String fullPackageName, String commentStart) {
+    public PythonWriter(PythonSettings settings, String fullPackageName, boolean addCodegenWarningHeader) {
         super(new ImportDeclarations(settings, fullPackageName));
         this.fullPackageName = fullPackageName;
         trimBlankLines();
         trimTrailingSpaces();
         putFormatter('T', new PythonSymbolFormatter());
-        putFormatter('N', new PythonNodeFormatter(this));
-        this.commentStart = commentStart;
+        putFormatter('N', new PythonNodeFormatter());
+        this.addCodegenWarningHeader = addCodegenWarningHeader;
     }
 
     /**
@@ -88,19 +87,10 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
 
         @Override
         public PythonWriter apply(String filename, String namespace) {
-            //Default is #
-            String commentStart = "#";
             // Markdown doesn't have comments, so there's no non-intrusive way to
             // add the warning.
-            if (filename.endsWith(".md")) {
-                commentStart = "";
-            } else if (filename.endsWith(".rst")) {
-                commentStart = "..\n    ";
-            } else if (filename.endsWith(".bat")) {
-                commentStart = "REM";
-            }
-
-            return new PythonWriter(settings, namespace, commentStart);
+            var addWarningHeader = !filename.endsWith(".md");
+            return new PythonWriter(settings, namespace, addWarningHeader);
         }
     }
 
@@ -143,8 +133,6 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
         return this;
     }
 
-    private static final int MAX_LINE_LENGTH = CodegenUtils.MAX_PREFERRED_LINE_LENGTH - 8;
-
     /**
      * Formats a given Commonmark string and wraps it for use in a doc
      * comment.
@@ -153,82 +141,8 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
      * @return Formatted documentation.
      */
     public String formatDocs(String docs) {
-        String rstDocs = DOC_CONVERTER.convertCommonmarkToRst(docs);
-        return wrapRST(rstDocs).toString().replace("$", "$$");
-    }
-
-    public static String wrapRST(String text) {
-        StringBuilder wrappedText = new StringBuilder();
-        String[] lines = text.split("\n");
-        for (String line : lines) {
-            wrapLine(line, wrappedText);
-        }
-        return wrappedText.toString();
-    }
-
-    private static void wrapLine(String line, StringBuilder wrappedText) {
-        int indent = getIndentationLevel(line);
-        String indentStr = " ".repeat(indent);
-        line = line.trim();
-
-        while (line.length() > MAX_LINE_LENGTH) {
-            int wrapAt = findWrapPosition(line, MAX_LINE_LENGTH);
-            wrappedText.append(indentStr).append(line, 0, wrapAt).append("\n");
-            if (line.startsWith("* ")) {
-                indentStr += "  ";
-            }
-            line = line.substring(wrapAt).trim();
-            if (line.isEmpty()) {
-                return;
-            }
-        }
-        wrappedText.append(indentStr).append(line).append("\n");
-    }
-
-    private static int findWrapPosition(String line, int maxLineLength) {
-        // Find the last space before maxLineLength
-        int wrapAt = line.lastIndexOf(' ', maxLineLength);
-        if (wrapAt == -1) {
-            // If no space found, don't wrap
-            wrapAt = line.length();
-        } else {
-            // Ensure we don't break a link
-            //TODO account for earlier backticks on the same line as a link
-            int linkStart = line.lastIndexOf("`", wrapAt);
-            int linkEnd = line.indexOf("`_", wrapAt);
-            if (linkStart != -1 && (linkEnd != -1 && linkEnd > linkStart)) {
-                linkEnd = line.indexOf("`_", linkStart);
-                if (linkEnd != -1) {
-                    wrapAt = linkEnd + 2;
-                } else {
-                    // No matching `_` found, keep the original wrap position
-                    wrapAt = line.lastIndexOf(' ', maxLineLength);
-                    if (wrapAt == -1) {
-                        wrapAt = maxLineLength;
-                    }
-                }
-            }
-        }
-        // Include trailing punctuation before a space in the previous line
-        int nextSpace = line.indexOf(' ', wrapAt);
-        if (nextSpace != -1) {
-            int i = wrapAt;
-            while (i < nextSpace && !Character.isLetterOrDigit(line.charAt(i))) {
-                i++;
-            }
-            if (i == nextSpace) {
-                wrapAt = nextSpace;
-            }
-        }
-        return wrapAt;
-    }
-
-    private static int getIndentationLevel(String line) {
-        int indent = 0;
-        while (indent < line.length() && Character.isWhitespace(line.charAt(indent))) {
-            indent++;
-        }
-        return indent;
+        return StringUtils.wrap(docs, CodegenUtils.MAX_PREFERRED_LINE_LENGTH - 8)
+                .replace("$", "$$");
     }
 
     /**
@@ -373,8 +287,8 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
         }
 
         contents += super.toString();
-        if (!commentStart.equals("")) {
-            String header = String.format("%s Code generated by smithy-python-codegen DO NOT EDIT.%n%n", commentStart);
+        if (addCodegenWarningHeader) {
+            String header = "# Code generated by smithy-python-codegen DO NOT EDIT.\n\n";
             contents = header + contents;
         }
         return contents;
@@ -386,14 +300,16 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
     private final class PythonSymbolFormatter implements BiFunction<Object, String, String> {
         @Override
         public String apply(Object type, String indent) {
-            if (type instanceof Symbol typeSymbol) {
-                // If a symbol has the IMPORTABLE property set to false, don't import it and
-                // treat the lack of the property being set as true
-                if (typeSymbol.getProperty(IMPORTABLE).orElse(true)) {
+            if (type instanceof Symbol) {
+                Symbol typeSymbol = (Symbol) type;
+                // Check if the symbol is an operation - we shouldn't add imports for operations, since
+                //  they are methods of the service object and *can't* be imported
+                if (!isOperationSymbol(typeSymbol)) {
                     addUseImports(typeSymbol);
                 }
                 return typeSymbol.getName();
-            } else if (type instanceof SymbolReference typeSymbol) {
+            } else if (type instanceof SymbolReference) {
+                SymbolReference typeSymbol = (SymbolReference) type;
                 addImport(typeSymbol.getSymbol(), typeSymbol.getAlias(), SymbolReference.ContextOption.USE);
                 return typeSymbol.getAlias();
             } else {
@@ -403,13 +319,11 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
         }
     }
 
+    private Boolean isOperationSymbol(Symbol typeSymbol) {
+        return typeSymbol.getProperty(SymbolProperties.SHAPE).map(Shape::isOperationShape).orElse(false);
+    }
+
     private final class PythonNodeFormatter implements BiFunction<Object, String, String> {
-        private final PythonWriter writer;
-
-        PythonNodeFormatter(PythonWriter writer) {
-            this.writer = writer;
-        }
-
         @Override
         public String apply(Object node, String indent) {
             if (node instanceof Optional<?>) {
@@ -419,18 +333,16 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
                 throw new CodegenException(
                         "Invalid type provided to $D. Expected a Node, but found `" + node + "`");
             }
-            return ((Node) node).accept(new PythonNodeFormatVisitor(indent, writer));
+            return ((Node) node).accept(new PythonNodeFormatVisitor(indent));
         }
     }
 
     private final class PythonNodeFormatVisitor implements NodeVisitor<String> {
 
         private String indent;
-        private final PythonWriter writer;
 
-        PythonNodeFormatVisitor(String indent, PythonWriter writer) {
+        PythonNodeFormatVisitor(String indent) {
             this.indent = indent;
-            this.writer = writer;
         }
 
         @Override
@@ -466,10 +378,10 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
         @Override
         public String arrayNode(ArrayNode node) {
             if (node.getElements().isEmpty()) {
-                return "()";
+                return "[]";
             }
 
-            StringBuilder builder = new StringBuilder("(\n");
+            StringBuilder builder = new StringBuilder("[\n");
             var oldIndent = indent;
             indent += getIndentText();
             for (Node element : node.getElements()) {
@@ -479,18 +391,17 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
             }
             indent = oldIndent;
             builder.append(indent);
-            builder.append(')');
+            builder.append(']');
             return builder.toString();
         }
 
         @Override
         public String objectNode(ObjectNode node) {
-            writer.addStdlibImport("types", "MappingProxyType");
             if (node.getMembers().isEmpty()) {
-                return "MappingProxyType({})";
+                return "{}";
             }
 
-            StringBuilder builder = new StringBuilder("MappingProxyType({\n");
+            StringBuilder builder = new StringBuilder("{\n");
             var oldIndent = indent;
             indent += getIndentText();
             for (Map.Entry<StringNode, Node> member : node.getMembers().entrySet()) {
@@ -502,7 +413,7 @@ public final class PythonWriter extends SymbolWriter<PythonWriter, ImportDeclara
             }
             indent = oldIndent;
             builder.append(indent);
-            builder.append("})");
+            builder.append('}');
             return builder.toString();
         }
     }
