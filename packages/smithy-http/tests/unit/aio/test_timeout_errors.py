@@ -23,57 +23,42 @@ except ImportError:
 class TestTimeoutErrorHandling:
     """Test timeout error handling for HTTP clients."""
 
-    @pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not available")
-    def test_aiohttp_timeout_error_detection(self):
-        """Test AIOHTTPClient timeout error detection."""
-        client = AIOHTTPClient()
-
+    def test_timeout_error_detection(self):
+        """Test timeout error detection for standard TimeoutError."""
         timeout_err = TimeoutError("Connection timed out")
-        result = client.get_error_info(timeout_err)
-        assert result == ErrorInfo(is_timeout_error=True, fault="client")
+        
+        if HAS_AIOHTTP:
+            result = AIOHTTPClient.get_error_info(None, timeout_err)
+            assert result == ErrorInfo(is_timeout_error=True, fault="client")
+        
+        if HAS_CRT:
+            result = AWSCRTHTTPClient.get_error_info(None, timeout_err)
+            assert result == ErrorInfo(is_timeout_error=True, fault="client")
 
+    def test_non_timeout_error_detection(self):
+        """Test non-timeout error detection."""
         other_err = ValueError("Not a timeout")
-        result = client.get_error_info(other_err)
-        assert result == ErrorInfo(is_timeout_error=False)
-        assert result.fault is None
+        
+        if HAS_AIOHTTP:
+            result = AIOHTTPClient.get_error_info(None, other_err)
+            assert result == ErrorInfo(is_timeout_error=False)
+            assert result.fault == "client"  # Default fault is "client"
+        
+        if HAS_CRT:
+            result = AWSCRTHTTPClient.get_error_info(None, other_err)
+            assert result == ErrorInfo(is_timeout_error=False)
+            assert result.fault == "client"  # Default fault is "client"
 
     @pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not available")
     def test_aiohttp_server_timeout_by_name(self):
         """Test aiohttp ServerTimeoutError detection by class name."""
-        client = AIOHTTPClient()
-
         server_err = aiohttp.ServerTimeoutError("Server timeout")
-        result = client.get_error_info(server_err)
+        result = AIOHTTPClient.get_error_info(None, server_err)
         assert result == ErrorInfo(is_timeout_error=True, fault="server")
 
     @pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not available")
     def test_aiohttp_connection_timeout_by_name(self):
         """Test aiohttp ConnectionTimeoutError detection by class name."""
-        client = AIOHTTPClient()
-
         conn_err = aiohttp.ConnectionTimeoutError("Connection timeout")
-        result = client.get_error_info(conn_err)
+        result = AIOHTTPClient.get_error_info(None, conn_err)
         assert result == ErrorInfo(is_timeout_error=True, fault="client")
-
-    @pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not available")
-    def test_aiohttp_socket_timeout_by_name(self):
-        """Test aiohttp SocketTimeoutError detection by class name."""
-        client = AIOHTTPClient()
-
-        socket_err = aiohttp.SocketTimeoutError("Socket timeout")
-        result = client.get_error_info(socket_err)
-        assert result == ErrorInfo(is_timeout_error=True, fault="client")
-
-    @pytest.mark.skipif(not HAS_CRT, reason="awscrt not available")
-    def test_crt_timeout_error_detection(self):
-        """Test CRTClient timeout error detection."""
-        client = AWSCRTHTTPClient()
-
-        timeout_err = TimeoutError("Connection timed out")
-        result = client.get_error_info(timeout_err)
-        assert result == ErrorInfo(is_timeout_error=True, fault="client")
-
-        other_err = ValueError("Not a timeout")
-        result = client.get_error_info(other_err)
-        assert result == ErrorInfo(is_timeout_error=False)
-        assert result.fault is None

@@ -222,7 +222,7 @@ class AWSCRTHTTPClient(http_aio_interfaces.HTTPClient):
         if isinstance(exception, AwsCrtError) and exception.name in timeout_indicators:
             return ErrorInfo(is_timeout_error=True, fault="client")
 
-        return ErrorInfo(is_timeout_error=False, fault="client")
+        return ErrorInfo(is_timeout_error=False)
 
     def __init__(
         self,

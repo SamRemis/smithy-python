@@ -19,7 +19,7 @@ from smithy_http.aio.interfaces import HTTPResponse as HTTPResponseInterface
 from smithy_http.aio.protocols import HttpBindingClientProtocol, HttpClientProtocol
 
 
-class TestProtocol(HttpClientProtocol):
+class MockProtocol(HttpClientProtocol):
     _id = ShapeID("ns.foo#bar")
 
     @property
@@ -126,7 +126,7 @@ class TestProtocol(HttpClientProtocol):
 def test_http_protocol_joins_uris(
     request_uri: URI, endpoint_uri: URI, expected: URI
 ) -> None:
-    protocol = TestProtocol()
+    protocol = MockProtocol()
     request = HTTPRequest(
         destination=request_uri,
         method="GET",
