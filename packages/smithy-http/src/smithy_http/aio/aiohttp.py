@@ -54,15 +54,11 @@ class AIOHTTPClient(HTTPClient):
 
     def get_error_info(self, exception: Exception, **kwargs) -> ErrorInfo:
         """Get information about aiohttp errors."""
-        if isinstance(
-            exception,
-            TimeoutError | aiohttp.ConnectionTimeoutError | aiohttp.SocketTimeoutError,
-        ):
-            return ErrorInfo(is_timeout_error=True, fault="client")
-        elif isinstance(exception, aiohttp.ServerTimeoutError):
-            return ErrorInfo(is_timeout_error=True, fault="server")
 
-        return ErrorInfo(is_timeout_error=False, fault="client")
+        if isinstance(exception, TimeoutError):
+            return ErrorInfo(is_timeout_error=True)
+
+        return ErrorInfo(is_timeout_error=False)
 
     def __init__(
         self,
