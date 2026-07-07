@@ -30,6 +30,7 @@ default-groups = ["test", "lint", "typing", "changelog"]
 
 [tool.uv.workspace]
 members = ["packages/*"]
+exclude = ["packages/sync-benchmark"]
 
 [tool.uv.sources]
 smithy_core = { workspace = true }
