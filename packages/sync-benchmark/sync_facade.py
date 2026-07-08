@@ -10,6 +10,9 @@ import asyncio
 import threading
 from typing import Any
 
+from aws_sdk_polly.config import Plugin
+from aws_sdk_polly.models import DescribeVoicesInput, DescribeVoicesOutput
+
 
 def _start_background_loop() -> asyncio.AbstractEventLoop:
     loop = asyncio.new_event_loop()
@@ -34,5 +37,7 @@ class PollyTypedSyncClient:
 
     def __init__(self, async_client: Any) -> None:
         self._client = async_client
-    def describe_voices(self, input, plugins=None):  # noqa: ANN001
+    def describe_voices(
+        self, input: DescribeVoicesInput, plugins: list[Plugin] | None = None
+    ) -> DescribeVoicesOutput:
         return _run_sync(self._client.describe_voices(input, plugins=plugins))
